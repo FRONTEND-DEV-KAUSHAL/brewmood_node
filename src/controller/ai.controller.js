@@ -25,10 +25,6 @@ const callModel = async (req, res) => {
     let messages = [
       {
         role: "user",
-        parts: [{ text: systemPrompt }]
-      },
-      {
-        role: "user",
         parts: [{ text: message }]
       }
     ];
@@ -36,8 +32,8 @@ const callModel = async (req, res) => {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: messages,
-      system_instruction: { role: "system", parts: [{ text: systemPrompt }] }, // optional
       config: {
+        systemInstruction: { text: systemPrompt },
         tools: [
           {
             functionDeclarations: [fetchCoffeeRecepies]
@@ -45,7 +41,7 @@ const callModel = async (req, res) => {
         ]
       }
     });
-    console.log(response.functionCalls)
+    console.log('FUNNNNN', response.functionCalls);
     // console.log(extractJsonFromText(initialResponse.data))
     // function call handling
     if (response.functionCalls && response.functionCalls.length > 0) {
@@ -54,28 +50,54 @@ const callModel = async (req, res) => {
       console.log(`Arguments: ${JSON.stringify(functionCall.args)}`);
       if (functionCall.name === 'get_coffee_recepies') {
         const coffeeSuggest = getCoffeeRecipes(functionCall.args["mood"]);
-      
+
         // response.text() instead of response.text
-        messages.push({ role: "assistant", parts: [{ text: response.text }] });
+        // messages.push({ role: "assistant", parts: [{ text: response.text }] });
+        // messages.push({
+        //   role: "user",
+        //   parts: [{ text: `**Action_Response**: ${coffeeSuggest}` }]
+        // });
+
+        messages.push({
+          role: "model",
+          parts: [
+            {
+              functionCall: response.functionCalls[0],
+            },
+          ],
+        });
+
         messages.push({
           role: "user",
-          parts: [{ text: `**Action_Response**: ${coffeeSuggest}` }]
+          parts: [
+            {
+              functionResponse: {
+                name: functionCall.name,
+                response: {
+                  mood: coffeeSuggest,
+                },
+              },
+            },
+          ],
         });
-      
+
         const finalResponse = await ai.models.generateContent({
           model: "gemini-2.5-flash",
           contents: messages,
-          system_instruction: { role: "system", parts: [{ text: systemPrompt }] },
           config: {
+            systemInstruction: { text: systemPrompt },
             tools: [
               {
                 functionDeclarations: [fetchCoffeeRecepies]
               }
-            ]
+            ],
+            // responseMimeType: "text/plain"
           }
         });
-      
-        console.log(finalResponse.text(), "coffeeSuggest");
+
+        console.log(finalResponse.text, "coffeeSuggest");
+        console.log('---');
+        return res.json({ result: finalResponse.text });
       }
     } else {
       console.log("No function call found in the response.");
@@ -84,9 +106,10 @@ const callModel = async (req, res) => {
 
     // return res.json({ result: response.text });
   } catch (e) {
-    console.error(e.message);
+    console.error(e.stack);
     res.json({ result: e.message });
   }
 };
+
 
 module.exports = { callModel };
